@@ -1,27 +1,87 @@
 import boto3
 import uuid
 import os
+import json
 
 def lambda_handler(event, context):
-    # Entrada (json)
-    print(event) # Log json en CloudWatch
-    tenant_id = event['body']['tenant_id']
-    pelicula_datos = event['body']['pelicula_datos']
-    nombre_tabla = os.environ["TABLE_NAME"]
-    # Proceso
-    uuidv4 = str(uuid.uuid4())
-    pelicula = {
-        'tenant_id': tenant_id,
-        'uuid': uuidv4,
-        'pelicula_datos': pelicula_datos
-    }
-    dynamodb = boto3.resource('dynamodb')
-    table = dynamodb.Table(nombre_tabla)
-    response = table.put_item(Item=pelicula)
-    # Salida (json)
-    print(pelicula) # Log json en CloudWatch
-    return {
-        'statusCode': 200,
-        'pelicula': pelicula,
-        'response': response
-    }
+    try:
+        # 1. Extraemos el body del evento gigante. Si no hay body, usamos un diccionario vacío.
+        body = event.get('body', {})
+        
+        # 2. LOG DE ENTRADA (INFO): Registramos solo lo relevante (el body).
+        log_entrada = {
+            "tipo": "INFO",
+            "log_datos": {
+                "mensaje": "Iniciando creación de película",
+                "datos_recibidos": body
+            }
+        }
+        print(json.dumps(log_entrada))
+
+        # Extracción de variables. Si faltan (ej. por escribir "pelicula_patos"), lanzará un KeyError.
+        tenant_id = body['tenant_id']
+        pelicula_datos = body['pelicula_datos']
+        nombre_tabla = os.environ["TABLE_NAME"]
+        
+        # Proceso
+        uuidv4 = str(uuid.uuid4())
+        pelicula = {
+            'tenant_id': tenant_id,
+            'uuid': uuidv4,
+            'pelicula_datos': pelicula_datos
+        }
+        
+        # Guardar en DynamoDB
+        dynamodb = boto3.resource('dynamodb')
+        table = dynamodb.Table(nombre_tabla)
+        response = table.put_item(Item=pelicula)
+        
+        # 3. LOG DE SALIDA (INFO): Registramos el éxito y el elemento que se insertó.
+        log_salida = {
+            "tipo": "INFO",
+            "log_datos": {
+                "mensaje": "Película insertada exitosamente en DynamoDB",
+                "pelicula_creada": pelicula
+            }
+        }
+        print(json.dumps(log_salida))
+        
+        return {
+            'statusCode': 200,
+            'pelicula': pelicula,
+            'response': response
+        }
+        
+    except KeyError as e:
+        # 4. LOG ERROR CONTROLADO: Atrapa errores de atributos faltantes.
+        log_error = {
+            "tipo": "ERROR",
+            "log_datos": {
+                "mensaje": "Error de validación: Faltan atributos requeridos en el JSON",
+                "atributo_faltante": str(e)
+                # Omitimos los datos recibidos aquí porque ya están evidenciados en el log de entrada
+            }
+        }
+        print(json.dumps(log_error))
+        
+        # Respuesta controlada para el cliente (ej. Postman)
+        return {
+            'statusCode': 400, # 400 Bad Request
+            'error': f"Falta el atributo requerido: {str(e)}"
+        }
+        
+    except Exception as e:
+        # 5. LOG ERROR GENERAL: Atrapa cualquier otro tipo de error interno (ej. caída de base de datos)
+        log_error = {
+            "tipo": "ERROR",
+            "log_datos": {
+                "mensaje": "Ocurrió un error interno en el servidor",
+                "detalle_error": str(e)
+            }
+        }
+        print(json.dumps(log_error))
+        
+        return {
+            'statusCode': 500, # 500 Internal Server Error
+            'error': "No se pudo procesar la solicitud."
+        }
