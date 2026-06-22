@@ -49,10 +49,8 @@ def lambda_handler(event, context):
         # RETORNO EXITOSO (HTTP 200 OK)
         return {
             'statusCode': 200,
-            'body': json.dumps({
-                'mensaje': 'Película creada con éxito',
-                'pelicula': pelicula
-            })
+            'pelicula': pelicula,
+            'response': response
         }
         
     except KeyError as e:
