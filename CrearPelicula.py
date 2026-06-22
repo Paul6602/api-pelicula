@@ -5,10 +5,10 @@ import json
 
 def lambda_handler(event, context):
     try:
-        # 1. Extraemos el body del evento gigante. Si no hay body, usamos un diccionario vacío.
+        # 1. Extraemos el body del evento. Si no hay body, usamos un diccionario vacío.
         body = event.get('body', {})
         
-        # 2. LOG DE ENTRADA (INFO): Registramos solo lo relevante (el body).
+        # 2. LOG DE ENTRADA (INFO): Registramos solo los datos relevantes que ingresan.
         log_entrada = {
             "tipo": "INFO",
             "log_datos": {
@@ -18,12 +18,12 @@ def lambda_handler(event, context):
         }
         print(json.dumps(log_entrada))
 
-        # Extracción de variables. Si faltan (ej. por escribir "pelicula_patos"), lanzará un KeyError.
+        # Extracción de variables de negocio.
         tenant_id = body['tenant_id']
         pelicula_datos = body['pelicula_datos']
         nombre_tabla = os.environ["TABLE_NAME"]
         
-        # Proceso
+        # Proceso de negocio
         uuidv4 = str(uuid.uuid4())
         pelicula = {
             'tenant_id': tenant_id,
@@ -31,12 +31,12 @@ def lambda_handler(event, context):
             'pelicula_datos': pelicula_datos
         }
         
-        # Guardar en DynamoDB
+        # Conexión e inserción en la base de datos DynamoDB
         dynamodb = boto3.resource('dynamodb')
         table = dynamodb.Table(nombre_tabla)
         response = table.put_item(Item=pelicula)
         
-        # 3. LOG DE SALIDA (INFO): Registramos el éxito y el elemento que se insertó.
+        # 3. LOG DE SALIDA (INFO): Éxito total.
         log_salida = {
             "tipo": "INFO",
             "log_datos": {
@@ -46,32 +46,36 @@ def lambda_handler(event, context):
         }
         print(json.dumps(log_salida))
         
+        # RETORNO EXITOSO (HTTP 200 OK)
         return {
             'statusCode': 200,
-            'pelicula': pelicula,
-            'response': response
+            'body': json.dumps({
+                'mensaje': 'Película creada con éxito',
+                'pelicula': pelicula
+            })
         }
         
     except KeyError as e:
-        # 4. LOG ERROR CONTROLADO: Atrapa errores de atributos faltantes.
+        # 4. LOG ERROR CONTROLADO (HTTP 400 Bad Request): Error de tipeo o llave faltante.
         log_error = {
             "tipo": "ERROR",
             "log_datos": {
                 "mensaje": "Error de validación: Faltan atributos requeridos en el JSON",
                 "atributo_faltante": str(e)
-                # Omitimos los datos recibidos aquí porque ya están evidenciados en el log de entrada
             }
         }
         print(json.dumps(log_error))
         
-        # Respuesta controlada para el cliente (ej. Postman)
+        # RETORNO ERROR DE CLIENTE
         return {
-            'statusCode': 400, # 400 Bad Request
-            'error': f"Falta el atributo requerido: {str(e)}"
+            'statusCode': 400,
+            'body': json.dumps({
+                'error': f"Falta el atributo requerido: {str(e)}"
+            })
         }
         
     except Exception as e:
-        # 5. LOG ERROR GENERAL: Atrapa cualquier otro tipo de error interno (ej. caída de base de datos)
+        # 5. LOG ERROR GENERAL (HTTP 500 Internal Server Error): Caídas de red o de AWS.
         log_error = {
             "tipo": "ERROR",
             "log_datos": {
@@ -81,7 +85,10 @@ def lambda_handler(event, context):
         }
         print(json.dumps(log_error))
         
+        # RETORNO ERROR DE SERVIDOR
         return {
-            'statusCode': 500, # 500 Internal Server Error
-            'error': "No se pudo procesar la solicitud."
+            'statusCode': 500,
+            'body': json.dumps({
+                'error': "No se pudo procesar la solicitud debido a un fallo interno."
+            })
         }
